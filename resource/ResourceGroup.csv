@@ -1,0 +1,2 @@
+ResourceType,ResourceGroupName,Location,Environment,Project
+resourcegroup,rg-uat-magnum,CentralIndia,Dev,magnum
