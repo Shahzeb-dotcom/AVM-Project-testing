@@ -28,3 +28,5 @@ override.tf.json
 # Ignore macOS system files
 .DS_Store
 **/.terraform/
+*.tfstate
+*.tfstate.backup
