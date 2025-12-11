@@ -47,6 +47,7 @@ jobs:
   terraform-apply:    
     runs-on: self-hosted
     if: github.ref == 'refs/heads/main'
+    # ➡ PR ya feature branches me apply nahi chalega (plan chalega but apply nahi).
     needs: init-plan                    # Depends On
 
     # 👇 Sabse important: Approval YAHI se control hota hai
