@@ -52,7 +52,7 @@ jobs:
     # 👇 Sabse important: Approval YAHI se control hota hai
     environment:
       name: dev          # Environment jisme approval rule laga hoga
-      url: https://portal.azure.com  # Optional info
+      # url: https://portal.azure.com  # Optional info
       
     steps:
     - name: Checkout
