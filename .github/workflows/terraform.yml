@@ -1,24 +1,21 @@
 name: "terraform-test"    # Workflow Name
 on: workflow_dispatch     #   Trigger None
 permissions:
-  # actions: read|write|none
-  # artifact-metadata: read|write|none
-  # attestations: read|write|none
-  # checks: read|write|none
   contents: read
-  # deployments: read|write|none
   id-token: write
-  # issues: read|write|none
-  # models: read|none
-  # discussions: read|write|none
-  # packages: read|write|none
-  # pages: read|write|none
-  # pull-requests: read|write|none
-  # security-events: read|write|none
-  # statuses: read|write|none
 jobs:
   init-plan:
     name: init-plan
     runs-on: self-hosted
-    
-  
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v6..1
+    - name: Azure Login               # Service-Connection
+      uses: Azure/login@v2.3.0
+      with:
+        client-id: "ec318753-8441-4718-8d01-3a7c4aeef626"
+        tenant-id: "0c30cc1a-956a-4c45-9571-96bfaa75a9af"
+        subscription-id: "de1c1815-4f90-412b-9551-d55f0de9407d"
+        
+       
+          
