@@ -6,7 +6,7 @@ permissions:
 jobs:
   init-plan:
     name: init-plan
-    runs-on: self-hosted
+    runs-on: github-runner
     steps:
     - name: Checkout
       uses: actions/checkout@v6..1
