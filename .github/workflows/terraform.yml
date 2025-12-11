@@ -1,0 +1,24 @@
+name: "terraform-test"    # Workflow Name
+on: workflow_dispatch     #   Trigger None
+permissions:
+  # actions: read|write|none
+  # artifact-metadata: read|write|none
+  # attestations: read|write|none
+  # checks: read|write|none
+  contents: read
+  # deployments: read|write|none
+  id-token: write
+  # issues: read|write|none
+  # models: read|none
+  # discussions: read|write|none
+  # packages: read|write|none
+  # pages: read|write|none
+  # pull-requests: read|write|none
+  # security-events: read|write|none
+  # statuses: read|write|none
+jobs:
+  init-plan:
+    name: init-plan
+    runs-on: self-hosted
+    
+  
