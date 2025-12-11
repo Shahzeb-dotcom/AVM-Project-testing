@@ -12,6 +12,7 @@ storage_account_name = "githubactonstg"
 container_name = "githubcontainer"
 key = "terraform.tfstate"
 }
+}
 
 provider "azurerm" {
     features {
