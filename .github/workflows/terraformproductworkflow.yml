@@ -1,0 +1,215 @@
+# .github/workflows/terraform-production.yml
+# Production-grade Terraform GitHub Actions workflow
+# Features included:
+# - PR validation (fmt, tflint, tfsec, terraform validate)
+# - Create a portable plan file (tfplan) and upload as artifact
+# - Post plan as a comment on PR (so reviewers can see the plan)
+# - Artifact download in apply job and strict usage of same plan
+# - Environment-based manual approval (GitHub Environments)
+# - Uses repository secrets for common credentials and environment secrets for env-specific values
+# - Uses actions/setup-terraform for consistent Terraform version
+# - Caching for Terraform plugin dirs
+
+name: Terraform CI/CD (Production-ready)
+
+on:
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch: {}
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+  id-token: write
+  checks: write
+  issues: write
+  pull-requests: write
+
+env:
+  TF_WORKING_DIR: "resource"         # folder containing Terraform code
+  TERRAFORM_VERSION: "1.5.7"        # update as needed
+
+jobs:
+  # ---------------------------
+  # Validate (runs for PRs and manual runs)
+  # ---------------------------
+  validate:
+    name: Validate & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            ~/.terraform.d/plugins
+          key: ${{ runner.os }}-tf-${{ hashFiles('**/*.tf') }}
+
+      - name: Run terraform fmt check
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (validate only)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate -no-color
+
+      - name: Run tflint (optional linter)
+        uses: wata727/tflint-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run tfsec (security scan)
+        uses: aquasecurity/tfsec-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+  # ---------------------------
+  # Plan (runs for PRs and on push to main for approval-ready plan)
+  # ---------------------------
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    needs: validate
+    outputs:
+      plan_artifact: ${{ steps.upload.outputs.artifact-name }}
+      plan_md: ${{ steps.plan_md.out }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Plan (binary tfplan)
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -input=false -no-color -out=tfplan
+          terraform show -no-color -json tfplan > tfplan.json
+
+      - name: Convert plan to markdown snippet
+        id: plan_md
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          # small markdown summary for PR comment
+          jq -r '"### Terraform Plan\n\n```json\n" + . + "\n```"' tfplan.json > plan.md || true
+          echo "plan_md=$(cat plan.md | sed 's/"/\\"/g')" >> $GITHUB_OUTPUT
+
+      - name: Upload tfplan artifact
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+
+      - name: Upload plan.md for visibility
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-md-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}/plan.md
+
+      - name: Comment plan on PR (if present)
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ## Terraform Plan
+            Review the generated plan artifact and summary below.
+            (Full binary plan attached as artifact `tfplan-${{ github.run_id }}`)
+
+            ${{ steps.plan_md.out }}
+
+  # ---------------------------
+  # Apply (protected by environment approval)
+  # ---------------------------
+  apply:
+    name: Terraform Apply
+    runs-on: ubuntu-latest
+    needs: plan
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production   # <-- set this environment in GitHub repo settings and add required reviewers & secrets
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download tfplan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIR }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Azure Login (apply)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Terraform Init (apply)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Show plan (sanity)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform show -no-color tfplan
+
+      - name: Terraform Apply (use exact plan file)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Post apply comment
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            ✅ Terraform Apply completed for commit `${{ github.sha }}`. See logs and artifacts.
+
+# ---------------------------
+# Notes / Setup you must do before using this workflow
+# 1) Create GitHub repository secrets:
+#    AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+# 2) Create GitHub Environments: dev, staging, production (Settings → Environments).
+#    - For production environment: add required reviewers (so apply job waits for manual approval)
+#    - Optionally add environment-specific secrets (e.g., PROD_AZURE_CLIENT_ID) and variables
+# 3) Ensure TF code lives in `resource/` folder or change TF_WORKING_DIR
+# 4) This workflow uploads a binary tfplan artifact — protect its access as needed
+# 5) Adjust Terraform version and runner type (self-hosted vs github-hosted) per policy
+# 6) Consider adding remote state backend (Azure Storage backend) in your Terraform code for team usage
+# 7) For security scanning, you can add additional tools: checkov, trivy, or custom scripts
+
+# End of workflow
