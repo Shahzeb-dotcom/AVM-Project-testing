@@ -6,6 +6,11 @@ terraform {
       version = "4.48.0"
     }
   }
+backend "azurerm" {
+resource_group_name = "rg-devops"
+storage_account_name = "githubactonstg"
+container_name = "githubcontainer"
+key = "terraform.tfstate"
 }
 
 provider "azurerm" {
