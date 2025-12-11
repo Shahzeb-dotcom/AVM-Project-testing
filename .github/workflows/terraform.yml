@@ -36,13 +36,13 @@ jobs:
       
     - name: Terraform Plan
       id: plan
-      run: terraform plan -no-color -input=false
-      continue-on-error: true
-      working-directory: resource  
-      
+      run: terraform plan -no-color -out=tfplan
+      working-directory: resource
+
     - name: Show Plan
       run: terraform show -no-color tfplan
       working-directory: resource
+
         
   terraform-apply:    
     runs-on: self-hosted
